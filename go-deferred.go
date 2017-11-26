@@ -6,43 +6,48 @@ import "net/http"
 import "os"
 import "time"
 
-func httpGet(url string) (bool, error) {
-	type Data struct {
-		MoreDeferred bool
-	}
+type Data struct {
+	Message      string
+	MoreDeferred bool
+}
 
+func httpGet(url string) (*Data, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	req.Close = true
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	data := new(Data)
 	err = json.NewDecoder(resp.Body).Decode(&data)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	return data.MoreDeferred, nil
+	return data, nil
 }
 
 func loop(url string) error {
 	for {
 		start := time.Now()
-		hasMoreDeferred, err := httpGet(url)
+		data, err := httpGet(url)
 		if err != nil {
 			return err
 		}
 
 		elapsed := time.Since(start)
-		if hasMoreDeferred {
-			fmt.Printf("%s = true (elapsed=%s)\n", url, elapsed)
+		if data != nil && data.MoreDeferred {
+			if len(data.Message) > 0 {
+				fmt.Printf("%s = %s (elapsed=%s)\n", url, data.Message, elapsed)
+			} else {
+				fmt.Printf("%s = true (elapsed=%s)\n", url, elapsed)
+			}
 		} else {
 			fmt.Printf("%s = false (elapsed=%s)\n", url, elapsed)
 			return nil
