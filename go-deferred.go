@@ -42,12 +42,17 @@ func loop(url string) error {
 		}
 
 		elapsed := time.Since(start)
-		if data != nil && data.MoreDeferred {
-			if len(data.Message) > 0 {
-				fmt.Printf("%s = %s (elapsed=%s)\n", url, data.Message, elapsed)
-			} else {
-				fmt.Printf("%s = true (elapsed=%s)\n", url, elapsed)
-			}
+		if data == nil {
+			fmt.Printf("%s = N/A (elapsed=%s)\n", url, elapsed)
+			return nil
+		}
+
+		if len(data.Message) > 0 {
+			fmt.Println(data.Message)
+		}
+
+		if data.MoreDeferred {
+			fmt.Printf("%s = true (elapsed=%s)\n", url, elapsed)
 		} else {
 			fmt.Printf("%s = false (elapsed=%s)\n", url, elapsed)
 			return nil
