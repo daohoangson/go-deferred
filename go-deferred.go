@@ -1,18 +1,34 @@
 package main
 
-import "encoding/json"
-import "fmt"
-import "net/http"
-import "os"
-import "time"
+import (
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+)
 
 type Data struct {
 	Message      string
 	MoreDeferred bool
 }
 
+var _httpClient *http.Client
+
+func httpClient() *http.Client {
+	if _httpClient == nil {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		_httpClient = &http.Client{Transport: tr}
+	}
+
+	return _httpClient
+}
+
 func httpGet(url string) (*Data, error) {
-	client := &http.Client{}
+	client := httpClient()
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
