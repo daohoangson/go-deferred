@@ -49,12 +49,12 @@ func (r *runner) HitOnce(url string) (*Hit, error) {
 		return nil, err
 	}
 
-	logger.WithField("more deferred?", hit.Data.MoreDeferred).Info("Hit OK")
+	logger.WithField("more?", hit.Data.MoreDeferred).Info("Hit OK")
 	return hit, nil
 }
 
-func (r *runner) Loop(url string) (int, *Hit, error) {
-	loops := 0
+func (r *runner) Loop(url string) (uint64, *Hit, error) {
+	var loops uint64
 	for {
 		logger := r.logger.WithField("loops", loops)
 		loops++
@@ -80,7 +80,7 @@ func (r *runner) Loop(url string) (int, *Hit, error) {
 
 func (r *runner) init(client *http.Client, logger *logrus.Logger) {
 	if client == nil {
-		client = internal.GetHttpClient()
+		client = internal.GetClient()
 	}
 	r.client = client
 

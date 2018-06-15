@@ -20,5 +20,5 @@ type Hit struct {
 // Runner represents an object that can hit deferred.php targets
 type Runner interface {
 	HitOnce(url string) (*Hit, error)
-	Loop(string) (int, *Hit, error)
+	Loop(string) (uint64, *Hit, error)
 }
