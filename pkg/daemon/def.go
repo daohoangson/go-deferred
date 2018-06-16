@@ -13,5 +13,4 @@ type Stats struct {
 	CounterLoops    uint64 `json:"counter_loops"`
 	CounterEnqueues uint64 `json:"counter_enqueues"`
 	LatestTimestamp int64  `json:"latest_timestamp"`
-	URL             string `json:"url"`
 }

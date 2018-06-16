@@ -21,7 +21,9 @@ type daemon struct {
 
 	secret string
 	queued sync.Map
-	stats  sync.Map
+
+	stats      map[string]*Stats
+	statsMutex sync.Mutex
 
 	timer          *time.Timer
 	timerMutex     sync.Mutex
@@ -47,16 +49,16 @@ func (d *daemon) ListenAndServe(port uint64) error {
 			logger.WithError(err)
 			code = http.StatusInternalServerError
 		}
-
 		if code != http.StatusOK {
 			internal.RespondCode(w, code)
 		}
+
 		logger = logger.WithField("code", code)
 		if code >= 500 {
 			logger.Error("Responded with 5xx")
 		} else if code >= 400 {
 			logger.Warn("Responded with 4xx")
-		} else {
+		} else if code != http.StatusOK {
 			logger.Info("Responded")
 		}
 	}
@@ -79,6 +81,8 @@ func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 	}
 	d.runner = r
 
+	d.stats = make(map[string]*Stats)
+
 	d.timerTimestamp = math.MaxInt64
 
 	logger.Debug("Initialized daemon")
@@ -86,10 +90,8 @@ func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 
 func (d *daemon) loadStats(url string) *Stats {
 	var stats *Stats
-	if statsValue, ok := d.stats.Load(url); ok {
-		if statsPtr, ok := statsValue.(*Stats); ok {
-			stats = statsPtr
-		}
+	if statsValue, ok := d.stats[url]; ok {
+		stats = statsValue
 	}
 	if stats == nil {
 		stats = &Stats{}
@@ -154,20 +156,15 @@ func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) (int, error) {
 }
 
 func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) (int, error) {
-	list := make([]*Stats, 0)
+	d.statsMutex.Lock()
+	json, err := json.Marshal(d.stats)
+	d.statsMutex.Unlock()
 
-	d.stats.Range(func(key, value interface{}) bool {
-		if stats, ok := value.(*Stats); ok {
-			list = append(list, stats)
-		}
-
-		return true
-	})
-
-	if json, err := json.Marshal(list); err == nil {
-		w.Write(json)
+	if err != nil {
+		return 0, err
 	}
 
+	w.Write(json)
 	return http.StatusOK, nil
 }
 
@@ -187,7 +184,7 @@ func (d *daemon) step1Enqueue(url string, timestamp int64) {
 		"timestamp": timestamp - now,
 	})
 
-	if existing >= now && timestamp >= existing {
+	if now <= existing && existing <= timestamp {
 		logger.Debug("Skipped")
 		return
 	}
@@ -195,19 +192,22 @@ func (d *daemon) step1Enqueue(url string, timestamp int64) {
 	d.queued.Store(url, timestamp)
 	logger.Debug("Stored")
 
+	d.statsMutex.Lock()
 	stats := d.loadStats(url)
 	stats.CounterEnqueues++
-	d.stats.Store(url, stats)
+	d.stats[url] = stats
+	d.statsMutex.Unlock()
 
 	d.step2Schedule()
 }
 
 func (d *daemon) step2Schedule() {
 	var next int64 = math.MaxInt64
+	now := time.Now().Unix()
 
 	d.queued.Range(func(key, value interface{}) bool {
 		if timestamp, ok := value.(int64); ok {
-			if timestamp < next {
+			if now <= timestamp && timestamp < next {
 				next = timestamp
 			}
 		} else {
@@ -217,23 +217,21 @@ func (d *daemon) step2Schedule() {
 		return true
 	})
 
-	now := time.Now().Unix()
-	if next < now {
-		next = now
-	}
-
 	var timerNew *time.Timer
 	var timerOld *time.Timer
+	var timerTimestamp int64
 
-	d.timerMutex.Lock()
-	timerTimestamp := d.timerTimestamp
-	if timerTimestamp < now || next < timerTimestamp {
-		timerNew = time.NewTimer(time.Second * time.Duration(next-now))
-		timerOld = d.timer
-		d.timer = timerNew
-		d.timerTimestamp = next
+	if now <= next {
+		d.timerMutex.Lock()
+		timerTimestamp = d.timerTimestamp
+		if timerTimestamp < now || next < timerTimestamp {
+			timerNew = time.NewTimer(time.Second * time.Duration(next-now))
+			timerOld = d.timer
+			d.timer = timerNew
+			d.timerTimestamp = next
+		}
+		d.timerMutex.Unlock()
 	}
-	d.timerMutex.Unlock()
 
 	logger := d.logger.WithFields(logrus.Fields{
 		"!":     "Sche",
@@ -269,7 +267,7 @@ func (d *daemon) step3OnTimer(timer *time.Timer) {
 	d.queued.Range(func(key, value interface{}) bool {
 		if timestamp, ok := value.(int64); ok {
 			if timestamp <= now {
-				d.step4Hit(key, now)
+				go d.step4Hit(key, timestamp)
 			} else {
 				logger.WithFields(logrus.Fields{
 					"_":         key,
@@ -288,27 +286,34 @@ func (d *daemon) step4Hit(key interface{}, timestamp int64) {
 		"_": key,
 	})
 
-	logger.Debug("Starting...")
 	url, ok := key.(string)
 	if !ok {
 		logger.Error("Failed type assertion")
 		return
 	}
 
+	prevStats := d.loadStats(url)
+	if timestamp <= prevStats.LatestTimestamp {
+		logger.Debug("Skipped (already hit)")
+		return
+	} else {
+		logger.Debug("Starting...")
+	}
+
 	loops, _, err := d.runner.Loop(url)
 	logger = logger.WithField("loops", loops)
 
+	d.statsMutex.Lock()
 	stats := d.loadStats(url)
 	stats.CounterHits++
 	stats.CounterLoops += loops
-	stats.LatestTimestamp = timestamp
-	stats.URL = url
-
+	stats.LatestTimestamp = time.Now().Unix()
 	if err != nil {
 		stats.CounterErrors++
 		logger.WithError(err)
 	}
+	d.stats[url] = stats
+	d.statsMutex.Unlock()
 
-	d.stats.Store(url, stats)
 	logger.Info("Done")
 }
