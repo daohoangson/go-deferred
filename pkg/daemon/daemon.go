@@ -19,7 +19,9 @@ type daemon struct {
 	runner runner.Runner
 	logger *logrus.Logger
 
-	secret string
+	minDelay int64
+	secret   string
+
 	queued sync.Map
 
 	stats      map[string]*Stats
@@ -80,6 +82,9 @@ func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 		r = runner.New(nil, logger)
 	}
 	d.runner = r
+
+	// at the earliest, schedule for the next second to avoid weird loops
+	d.minDelay = 1
 
 	d.stats = make(map[string]*Stats)
 
@@ -148,10 +153,10 @@ func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) (int, error) {
 	}
 
 	delay, _ := strconv.ParseInt(delayValue, 10, 64)
-	timestamp := time.Now().Unix()
-	if delay > 0 {
-		timestamp += delay
+	if delay < d.minDelay {
+		delay = d.minDelay
 	}
+	timestamp := time.Now().Unix() + delay
 
 	go d.step1Enqueue(target, timestamp)
 	return http.StatusAccepted, nil
