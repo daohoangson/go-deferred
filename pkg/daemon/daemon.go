@@ -209,7 +209,7 @@ func (d *daemon) step1Enqueue(url string, timestamp int64) {
 		"timestamp": timestamp - now,
 	})
 
-	if now <= existing && existing <= timestamp {
+	if now < existing && existing <= timestamp {
 		logger.Debug("Skipped")
 		return
 	}
@@ -249,7 +249,7 @@ func (d *daemon) step2Schedule() {
 	if now <= next {
 		d.timerMutex.Lock()
 		timerTimestamp = d.timerTimestamp
-		if timerTimestamp < now || next < timerTimestamp {
+		if timerTimestamp <= now || next < timerTimestamp {
 			timerNew = time.NewTimer(time.Second * time.Duration(next-now))
 			timerOld = d.timer
 			d.timer = timerNew
