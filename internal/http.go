@@ -8,9 +8,9 @@ import (
 
 var _httpClient *http.Client
 
-// GetClient setups a sensible http client to be used
+// GetHTTPClient setups a sensible http client to be used
 // https://medium.com/@nate510/don-t-use-go-s-default-http-client-4804cb19f779
-func GetClient() *http.Client {
+func GetHTTPClient() *http.Client {
 	if _httpClient == nil {
 		tr := &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},

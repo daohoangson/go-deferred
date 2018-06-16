@@ -56,7 +56,7 @@ func (d *daemon) SetSecret(secret string) {
 
 func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 	if logger == nil {
-		logger = logrus.New()
+		logger = internal.GetLogger()
 	}
 	d.logger = logger
 
@@ -157,19 +157,19 @@ func (d *daemon) step1Enqueue(url string, timestamp int64) {
 
 	now := time.Now().Unix()
 	logger := d.logger.WithFields(logrus.Fields{
+		"!":         "Enqu",
+		"_":         url,
 		"existing":  existing - now,
-		"now":       now,
 		"timestamp": timestamp - now,
-		"url":       url,
 	})
 
 	if existing >= now && timestamp >= existing {
-		logger.Info("Skipped enqueuing")
+		logger.Debug("Skipped")
 		return
 	}
 
 	d.queued.Store(url, timestamp)
-	logger.Info("Enqueued")
+	logger.Debug("Stored")
 
 	stats := d.loadStats(url)
 	stats.CounterEnqueues++
@@ -212,15 +212,15 @@ func (d *daemon) step2Schedule() {
 	d.timerMutex.Unlock()
 
 	logger := d.logger.WithFields(logrus.Fields{
-		"next":      next - now,
-		"now":       now,
-		"timer":     timerTimestamp - now,
-		"timerNew?": timerNew != nil,
-		"timerOld?": timerOld != nil,
+		"!":     "Sche",
+		"next":  next - now,
+		"timer": timerTimestamp - now,
+		"new?":  internal.Ternary(timerNew != nil, 1, 0),
+		"old?":  internal.Ternary(timerOld != nil, 1, 0),
 	})
 
 	if timerNew == nil {
-		logger.Info("Skipped timer rescheduling")
+		logger.Info("Skipped")
 		return
 	}
 
@@ -229,15 +229,18 @@ func (d *daemon) step2Schedule() {
 	}
 
 	go d.step3OnTimer(timerNew)
-	logger.Info("Rescheduled")
+	logger.Info("Set timer")
 }
 
 func (d *daemon) step3OnTimer(timer *time.Timer) {
 	<-timer.C
 
 	now := time.Now().Unix()
-	logger := d.logger.WithField("now", now)
-	logger.Debug("On timer...")
+	logger := d.logger.WithFields(logrus.Fields{
+		"!":   "Timr",
+		"now": now,
+	})
+	logger.Debug("Running...")
 
 	d.queued.Range(func(key, value interface{}) bool {
 		if timestamp, ok := value.(int64); ok {
@@ -245,9 +248,9 @@ func (d *daemon) step3OnTimer(timer *time.Timer) {
 				d.step4Hit(key, now)
 			} else {
 				logger.WithFields(logrus.Fields{
-					"key":       key,
+					"_":         key,
 					"timestamp": timestamp,
-				}).Debug("On timer: skipped hitting")
+				}).Debug("Skipped hitting")
 			}
 		}
 
@@ -256,9 +259,12 @@ func (d *daemon) step3OnTimer(timer *time.Timer) {
 }
 
 func (d *daemon) step4Hit(key interface{}, timestamp int64) {
-	logger := d.logger.WithField("key", key)
+	logger := d.logger.WithFields(logrus.Fields{
+		"!": "Hitt",
+		"_": key,
+	})
 
-	logger.Debug("Hitting...")
+	logger.Debug("Starting...")
 	url, ok := key.(string)
 	if !ok {
 		logger.Error("Failed type assertion")
@@ -280,5 +286,5 @@ func (d *daemon) step4Hit(key interface{}, timestamp int64) {
 	}
 
 	d.stats.Store(url, stats)
-	logger.Info("Completed loop")
+	logger.Info("Done")
 }

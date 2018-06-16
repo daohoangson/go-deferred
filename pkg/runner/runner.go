@@ -25,7 +25,10 @@ func (r *runner) HitOnce(url string) (*Hit, error) {
 	hit := new(Hit)
 	hit.Data = new(Data)
 	hit.TimeStart = time.Now()
-	logger := r.logger.WithField("url", url)
+	logger := r.logger.WithFields(logrus.Fields{
+		"!": "Once",
+		"_": url,
+	})
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -49,20 +52,24 @@ func (r *runner) HitOnce(url string) (*Hit, error) {
 		return nil, err
 	}
 
-	logger.WithField("more?", hit.Data.MoreDeferred).Info("Hit OK")
+	logger.WithField("more?", internal.Ternary(hit.Data.MoreDeferred, 1, 0)).Info("Hit OK")
 	return hit, nil
 }
 
 func (r *runner) Loop(url string) (uint64, *Hit, error) {
 	var loops uint64
 	for {
-		logger := r.logger.WithField("loops", loops)
 		loops++
+		logger := r.logger.WithFields(logrus.Fields{
+			"!":     "Loop",
+			"_":     url,
+			"loops": loops,
+		})
 
-		logger.Debug("Starting loop...")
+		logger.Debug("Looping...")
 		result, err := r.HitOnce(url)
 		if err != nil {
-			logger.Info("Stopping loop because of an error...")
+			logger.WithError(err).Error("Stopped")
 			return loops, nil, err
 		}
 
@@ -72,7 +79,7 @@ func (r *runner) Loop(url string) (uint64, *Hit, error) {
 		}
 
 		if !data.MoreDeferred {
-			logger.Info("No more deferred, stopping loop...")
+			logger.Info("Stopped (no more)")
 			return loops, result, nil
 		}
 	}
@@ -80,12 +87,12 @@ func (r *runner) Loop(url string) (uint64, *Hit, error) {
 
 func (r *runner) init(client *http.Client, logger *logrus.Logger) {
 	if client == nil {
-		client = internal.GetClient()
+		client = internal.GetHTTPClient()
 	}
 	r.client = client
 
 	if logger == nil {
-		logger = logrus.New()
+		logger = internal.GetLogger()
 	}
 	r.logger = logger
 
