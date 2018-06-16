@@ -15,3 +15,7 @@ RUN cd "$DEFERRED_SOURCE_PATH" \
 FROM debian:stretch-slim
 
 COPY --from=builder /go/bin/* /usr/local/bin/
+
+COPY . /app
+WORKDIR /app
+EXPOSE 80
