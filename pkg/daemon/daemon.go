@@ -232,7 +232,8 @@ func (d *daemon) step1Enqueue(url string, timestamp int64) {
 }
 
 func (d *daemon) step2Schedule() {
-	var next int64 = math.MaxInt64
+	var initialNext int64 = math.MaxInt64
+	next := initialNext
 	now := time.Now().Unix()
 
 	d.queued.Range(func(key, value interface{}) bool {
@@ -251,7 +252,7 @@ func (d *daemon) step2Schedule() {
 	var timerOld *time.Timer
 	var timerTimestamp int64
 
-	if now <= next {
+	if now <= next && next < initialNext {
 		d.timerMutex.Lock()
 		timerTimestamp = d.timerTimestamp
 		if timerTimestamp <= now || next < timerTimestamp {
