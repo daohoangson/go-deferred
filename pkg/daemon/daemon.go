@@ -267,7 +267,7 @@ func (d *daemon) step2Schedule() {
 	})
 
 	if timerNew == nil {
-		logger.Info("Skipped")
+		logger.Debug("Skipped")
 		return
 	}
 
@@ -289,10 +289,16 @@ func (d *daemon) step3OnTimer(timer *time.Timer) {
 	})
 	logger.Debug("Running...")
 
+	var wg sync.WaitGroup
+
 	d.queued.Range(func(key, value interface{}) bool {
 		if timestamp, ok := value.(int64); ok {
 			if timestamp <= now {
-				go d.step4Hit(key, timestamp)
+				wg.Add(1)
+				go func(key interface{}, timestamp int64) {
+					d.step4Hit(key, timestamp)
+					wg.Done()
+				}(key, timestamp)
 			} else {
 				logger.WithFields(logrus.Fields{
 					"_":         key,
@@ -303,6 +309,10 @@ func (d *daemon) step3OnTimer(timer *time.Timer) {
 
 		return true
 	})
+
+	time.Sleep(time.Second)
+	wg.Wait()
+	d.step2Schedule()
 }
 
 func (d *daemon) step4Hit(key interface{}, timestamp int64) {
