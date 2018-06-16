@@ -40,10 +40,24 @@ func (d *daemon) ListenAndServe(port uint64) error {
 	d.logger.WithField("addr", addr).Info("Going to listen and serve now...")
 
 	var f http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
-		err := d.serve(w, r)
+		code, err := d.serve(w, r)
+		logger := d.logger.WithField("uri", r.RequestURI)
+
 		if err != nil {
-			d.logger.WithField("requestURI", r.RequestURI).WithError(err).Error("Responding HTTP 500...")
-			internal.RespondCode(w, http.StatusInternalServerError)
+			logger.WithError(err)
+			code = http.StatusInternalServerError
+		}
+
+		if code != http.StatusOK {
+			internal.RespondCode(w, code)
+		}
+		logger = logger.WithField("code", code)
+		if code >= 500 {
+			logger.Error("Responded with 5xx")
+		} else if code >= 400 {
+			logger.Warn("Responded with 4xx")
+		} else {
+			logger.Info("Responded")
 		}
 	}
 
@@ -84,37 +98,49 @@ func (d *daemon) loadStats(url string) *Stats {
 	return stats
 }
 
-func (d *daemon) serve(w http.ResponseWriter, r *http.Request) error {
+func (d *daemon) serve(w http.ResponseWriter, r *http.Request) (int, error) {
 	u, err := url.Parse(r.RequestURI)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	switch u.Path {
+	case "/favicon.ico":
+		return d.serveFavicon(w, u)
 	case "/queue":
 		return d.serveQueue(w, u)
 	case "/stats":
 		return d.serveStats(w, u)
 	}
 
-	internal.RespondCode(w, http.StatusBadRequest)
-	return nil
+	return http.StatusNotFound, nil
 }
 
-func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) error {
+func (d *daemon) serveFavicon(w http.ResponseWriter, u *url.URL) (int, error) {
+	// https://github.com/mathiasbynens/small
+	ico, err := internal.Base64Decode("AAABAAEAAQEAAAEAGAAwAAAAFgAAACgAAAABAAAAAgAAAAEAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAA==")
+	if err != nil {
+		return 0, err
+	}
+
+	w.Header().Set("Cache-Control", "max-age=84600, public")
+	w.Write(ico)
+
+	return http.StatusOK, nil
+}
+
+func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) (int, error) {
 	query := u.Query()
 	hash := query.Get("hash")
 	target := query.Get("target")
 	delayValue := query.Get("delay")
 	if len(target) == 0 || len(hash) == 0 {
-		internal.RespondCode(w, http.StatusBadRequest)
-		return nil
+		return http.StatusBadRequest, nil
 	}
 
 	md5 := internal.GetMD5(target, d.secret)
 	if md5 != hash {
-		internal.RespondCode(w, http.StatusForbidden)
-		return nil
+		return http.StatusForbidden, nil
 	}
 
 	delay, _ := strconv.ParseInt(delayValue, 10, 64)
@@ -124,12 +150,10 @@ func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) error {
 	}
 
 	go d.step1Enqueue(target, timestamp)
-
-	internal.RespondCode(w, http.StatusAccepted)
-	return nil
+	return http.StatusAccepted, nil
 }
 
-func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) error {
+func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) (int, error) {
 	list := make([]*Stats, 0)
 
 	d.stats.Range(func(key, value interface{}) bool {
@@ -144,7 +168,7 @@ func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) error {
 		w.Write(json)
 	}
 
-	return nil
+	return http.StatusOK, nil
 }
 
 func (d *daemon) step1Enqueue(url string, timestamp int64) {
