@@ -46,7 +46,7 @@ func (d *daemon) ListenAndServe(port uint64) error {
 		logger := d.logger.WithField("uri", r.RequestURI)
 
 		if err != nil {
-			logger.WithError(err)
+			logger = logger.WithError(err)
 			code = http.StatusInternalServerError
 		}
 		if code != http.StatusOK {
@@ -111,6 +111,8 @@ func (d *daemon) serve(w http.ResponseWriter, r *http.Request) (int, error) {
 		return d.serveFavicon(w, u)
 	case "/queue":
 		return d.serveQueue(w, u)
+	case "/queued":
+		return d.serveQueued(w, u)
 	case "/stats":
 		return d.serveStats(w, u)
 	}
@@ -153,6 +155,29 @@ func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) (int, error) {
 
 	go d.step1Enqueue(target, timestamp)
 	return http.StatusAccepted, nil
+}
+
+func (d *daemon) serveQueued(w http.ResponseWriter, u *url.URL) (int, error) {
+	queued := make(map[string]int64)
+	now := time.Now().Unix()
+
+	d.queued.Range(func(key, value interface{}) bool {
+		if url, ok := key.(string); ok {
+			if timestamp, ok := value.(int64); ok {
+				queued[url] = timestamp - now
+			}
+		}
+
+		return true
+	})
+
+	json, err := json.Marshal(queued)
+	if err != nil {
+		return 0, err
+	}
+
+	w.Write(json)
+	return http.StatusOK, nil
 }
 
 func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) (int, error) {
@@ -296,9 +321,8 @@ func (d *daemon) step4Hit(key interface{}, timestamp int64) {
 	if timestamp <= prevStats.LatestTimestamp {
 		logger.Debug("Skipped (already hit)")
 		return
-	} else {
-		logger.Debug("Starting...")
 	}
+	logger.Debug("Starting...")
 
 	loops, _, err := d.runner.Loop(url)
 	logger = logger.WithField("loops", loops)
