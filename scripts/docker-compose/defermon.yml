@@ -1,0 +1,5 @@
+defermon:
+  image: xfrocks/go-deferred
+  command: defermon 8080 s3cr3t
+  ports:
+    - "8080:8080"
