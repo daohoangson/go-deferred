@@ -366,9 +366,12 @@ func (d *daemon) step3WakeUp(counter uint64) {
 	d.timerMutex.Lock()
 	d.timerCounterRun++
 	d.timerRunAt = now
+	noMoreTimers := d.timerCounterTrigger == d.timerCounterSet
 	d.timerMutex.Unlock()
 
-	time.Sleep(d.coolDown)
+	if noMoreTimers {
+		time.Sleep(d.coolDown)
+	}
 
 	d.step2Schedule("step3")
 
