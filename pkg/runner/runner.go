@@ -67,7 +67,7 @@ func (r *runner) Hit(url string) (*Hit, error) {
 		"_": url,
 	})
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		logger.WithError(err).Error("Could not prepare request")
 		return nil, err
