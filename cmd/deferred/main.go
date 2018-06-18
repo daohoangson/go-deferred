@@ -24,7 +24,7 @@ func main() {
 		url := args[i]
 		go func(workerID int, url string) {
 			defer wg.Done()
-			r.Loop(url)
+			runner.Loop(r, url)
 		}(i, url)
 	}
 

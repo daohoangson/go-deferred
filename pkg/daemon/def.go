@@ -8,9 +8,9 @@ type Daemon interface {
 
 // Stats represents metrics for an URL
 type Stats struct {
-	CounterErrors   uint64 `json:"counter_errors"`
-	CounterHits     uint64 `json:"counter_hits"`
-	CounterLoops    uint64 `json:"counter_loops"`
 	CounterEnqueues uint64 `json:"counter_enqueues"`
+	CounterErrors   uint64 `json:"counter_errors"`
+	CounterLoops    uint64 `json:"counter_loops"`
+	CounterOnTimers uint64 `json:"counter_on_timers"`
 	LatestTimestamp int64  `json:"latest_timestamp"`
 }

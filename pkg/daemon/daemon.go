@@ -19,7 +19,8 @@ type daemon struct {
 	runner runner.Runner
 	logger *logrus.Logger
 
-	minDelay int64
+	delayMin int64
+	delayMax int64
 	secret   string
 
 	queued sync.Map
@@ -27,9 +28,11 @@ type daemon struct {
 	stats      map[string]*Stats
 	statsMutex sync.Mutex
 
-	timer          *time.Timer
-	timerMutex     sync.Mutex
-	timerTimestamp int64
+	timer           *time.Timer
+	timerCounterSet uint64
+	timerCounterRun uint64
+	timerMutex      sync.Mutex
+	timerTimestamp  int64
 }
 
 // New returns a new Deamon instance
@@ -84,7 +87,9 @@ func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 	d.runner = r
 
 	// at the earliest, schedule for the next second to avoid weird loops
-	d.minDelay = 1
+	d.delayMin = 1
+	// do not schedule for further than 5 minute
+	d.delayMax = 300
 
 	d.stats = make(map[string]*Stats)
 
@@ -153,12 +158,8 @@ func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) (int, error) {
 	}
 
 	delay, _ := strconv.ParseInt(delayValue, 10, 64)
-	if delay < d.minDelay {
-		delay = d.minDelay
-	}
-	timestamp := time.Now().Unix() + delay
+	go d.step1Enqueue(target, delay)
 
-	go d.step1Enqueue(target, timestamp)
 	return http.StatusAccepted, nil
 }
 
@@ -198,7 +199,15 @@ func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) (int, error) {
 	return http.StatusOK, nil
 }
 
-func (d *daemon) step1Enqueue(url string, timestamp int64) {
+func (d *daemon) step1Enqueue(url string, delay int64) {
+	if delay < d.delayMin {
+		delay = d.delayMin
+	}
+	if delay > d.delayMax {
+		delay = d.delayMax
+	}
+	timestamp := time.Now().Unix() + delay
+
 	var existing int64
 	if existingValue, ok := d.queued.Load(url); ok {
 		if existingInt64, ok := existingValue.(int64); ok {
@@ -259,6 +268,7 @@ func (d *daemon) step2Schedule() {
 			timerNew = time.NewTimer(time.Second * time.Duration(next-now))
 			timerOld = d.timer
 			d.timer = timerNew
+			d.timerCounterSet++
 			d.timerTimestamp = next
 		}
 		d.timerMutex.Unlock()
@@ -293,7 +303,12 @@ func (d *daemon) step3OnTimer(timer *time.Timer) {
 		"!":   "Timr",
 		"now": now,
 	})
+
+	d.timerMutex.Lock()
 	logger.Debug("Running...")
+	d.timer = nil
+	d.timerCounterRun++
+	d.timerMutex.Unlock()
 
 	var wg sync.WaitGroup
 
@@ -340,12 +355,12 @@ func (d *daemon) step4Hit(key interface{}, timestamp int64) {
 	}
 	logger.Debug("Starting...")
 
-	loops, _, err := d.runner.Loop(url)
+	loops, _, err := runner.Loop(d.runner, url)
 	logger = logger.WithField("loops", loops)
 
 	d.statsMutex.Lock()
 	stats := d.loadStats(url)
-	stats.CounterHits++
+	stats.CounterOnTimers++
 	stats.CounterLoops += loops
 	stats.LatestTimestamp = time.Now().Unix()
 	if err != nil {

@@ -2,6 +2,8 @@ package runner // import "github.com/daohoangson/go-deferred/pkg/runner"
 
 import (
 	"time"
+
+	"github.com/Sirupsen/logrus"
 )
 
 // Data represents response from hit target
@@ -19,6 +21,6 @@ type Hit struct {
 
 // Runner represents an object that can hit deferred.php targets
 type Runner interface {
-	HitOnce(url string) (*Hit, error)
-	Loop(string) (uint64, *Hit, error)
+	GetLogger() *logrus.Logger
+	Hit(url string) (*Hit, error)
 }

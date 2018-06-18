@@ -21,7 +21,44 @@ func New(client *http.Client, logger *logrus.Logger) Runner {
 	return r
 }
 
-func (r *runner) HitOnce(url string) (*Hit, error) {
+// Loop keeps hitting the specified URL until there is no more jobs
+func Loop(r Runner, url string) (uint64, *Hit, error) {
+	var loops uint64
+
+	logger := r.GetLogger()
+
+	for {
+		loops++
+		logger := logger.WithFields(logrus.Fields{
+			"!":     "Loop",
+			"_":     url,
+			"loops": loops,
+		})
+
+		logger.Debug("Looping...")
+		result, err := r.Hit(url)
+		if err != nil {
+			logger.WithError(err).Error("Stopped")
+			return loops, nil, err
+		}
+
+		data := result.Data
+		if len(data.Message) > 0 {
+			logger.Info(data.Message)
+		}
+
+		if !data.MoreDeferred {
+			logger.Info("Stopped (no more)")
+			return loops, result, nil
+		}
+	}
+}
+
+func (r *runner) GetLogger() *logrus.Logger {
+	return r.logger
+}
+
+func (r *runner) Hit(url string) (*Hit, error) {
 	hit := new(Hit)
 	hit.Data = new(Data)
 	hit.TimeStart = time.Now()
@@ -54,35 +91,6 @@ func (r *runner) HitOnce(url string) (*Hit, error) {
 
 	logger.WithField("more?", internal.Ternary(hit.Data.MoreDeferred, 1, 0)).Info("Hit OK")
 	return hit, nil
-}
-
-func (r *runner) Loop(url string) (uint64, *Hit, error) {
-	var loops uint64
-	for {
-		loops++
-		logger := r.logger.WithFields(logrus.Fields{
-			"!":     "Loop",
-			"_":     url,
-			"loops": loops,
-		})
-
-		logger.Debug("Looping...")
-		result, err := r.HitOnce(url)
-		if err != nil {
-			logger.WithError(err).Error("Stopped")
-			return loops, nil, err
-		}
-
-		data := result.Data
-		if len(data.Message) > 0 {
-			logger.Info(data.Message)
-		}
-
-		if !data.MoreDeferred {
-			logger.Info("Stopped (no more)")
-			return loops, result, nil
-		}
-	}
 }
 
 func (r *runner) init(client *http.Client, logger *logrus.Logger) {
