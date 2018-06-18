@@ -11,6 +11,6 @@ type Stats struct {
 	CounterEnqueues uint64 `json:"counter_enqueues"`
 	CounterErrors   uint64 `json:"counter_errors"`
 	CounterLoops    uint64 `json:"counter_loops"`
-	CounterOnTimers uint64 `json:"counter_on_timers"`
-	LatestTimestamp int64  `json:"latest_timestamp"`
+	CounterWakeUps  uint64 `json:"counter_on_timers"`
+	LastHit         int64  `json:"last_hit"`
 }
