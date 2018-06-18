@@ -3,7 +3,6 @@ package daemon // import "github.com/daohoangson/go-deferred/pkg/daemon"
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,10 +18,10 @@ type daemon struct {
 	runner runner.Runner
 	logger *logrus.Logger
 
-	coolDown time.Duration
-	delayMin int64
-	delayMax int64
-	secret   string
+	coolDown        time.Duration
+	cutOff          time.Duration
+	defaultSchedule time.Duration
+	secret          string
 
 	queued sync.Map
 
@@ -33,13 +32,13 @@ type daemon struct {
 	timerCounterTrigger uint64
 	timerCounterRun     uint64
 	timerMutex          sync.Mutex
-	timerTimestampSet   int64
-	timerTimestampRun   int64
+	timerSet            time.Time
+	timerRun            time.Time
 
 	wakeUpCounterStart  uint64
 	wakeUpCounterFinish uint64
 	wakeUpMutex         sync.Mutex
-	wakeUpSignal        chan int64
+	wakeUpSignal        chan uint64
 }
 
 // New returns a new Deamon instance
@@ -82,6 +81,10 @@ func (d *daemon) SetSecret(secret string) {
 	d.secret = secret
 }
 
+func (d *daemon) enqueueNow(url string) {
+	d.step1Enqueue(url, 0)
+}
+
 func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 	if logger == nil {
 		logger = internal.GetLogger()
@@ -95,19 +98,23 @@ func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 
 	d.coolDown = time.Second
 
-	// at the earliest, schedule for the next second to avoid weird loops
-	d.delayMin = 1
-	// do not schedule for further than 5 minute
-	d.delayMax = 300
+	d.defaultSchedule = 30 * time.Second
+	d.cutOff = 300 * time.Second
 
 	d.stats = make(map[string]*Stats)
 
-	d.timerTimestampSet = math.MaxInt64
-	d.wakeUpSignal = make(chan int64, 42)
-	go func(c chan int64) {
+	d.wakeUpSignal = make(chan uint64, 42)
+	go func(c chan uint64) {
 		for {
-			<-c
-			d.step3WakeUp()
+			counter := <-c
+
+			if counter == 0 {
+				// our test script sends counter zero to stop this goroutine
+				// TODO: implement a better way to do this
+				break
+			}
+
+			d.step3WakeUp(counter)
 		}
 	}(d.wakeUpSignal)
 
@@ -174,19 +181,19 @@ func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) (int, error) {
 	}
 
 	delay, _ := strconv.ParseInt(delayValue, 10, 64)
-	go d.step1Enqueue(target, delay)
+	go d.step1Enqueue(target, time.Duration(delay)*time.Second)
 
 	return http.StatusAccepted, nil
 }
 
 func (d *daemon) serveQueued(w http.ResponseWriter, u *url.URL) (int, error) {
-	queued := make(map[string]int64)
-	now := time.Now().Unix()
+	queued := make(map[string]float64)
+	now := time.Now()
 
 	d.queued.Range(func(key, value interface{}) bool {
 		if url, ok := key.(string); ok {
-			if timestamp, ok := value.(int64); ok {
-				queued[url] = timestamp - now
+			if t, ok := value.(time.Time); ok {
+				queued[url] = t.Sub(now).Seconds()
 			}
 		}
 
@@ -215,36 +222,29 @@ func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) (int, error) {
 	return http.StatusOK, nil
 }
 
-func (d *daemon) step1Enqueue(url string, delay int64) {
-	if delay < d.delayMin {
-		delay = d.delayMin
-	}
-	if delay > d.delayMax {
-		delay = d.delayMax
-	}
-	timestamp := time.Now().Unix() + delay
+func (d *daemon) step1Enqueue(url string, delay time.Duration) {
+	now := time.Now()
+	t := now.Add(delay)
+	logger := d.logger.WithFields(logrus.Fields{
+		"!": "Enqu",
+		"_": url,
+		"t": t.Sub(now).Seconds(),
+	})
 
-	var existing int64
+	var existing time.Time
 	if existingValue, ok := d.queued.Load(url); ok {
-		if existingInt64, ok := existingValue.(int64); ok {
-			existing = existingInt64
+		if existingTime, ok := existingValue.(time.Time); ok {
+			existing = existingTime
+			logger = logger.WithField("existing", existing.Sub(now).Seconds())
 		}
 	}
 
-	now := time.Now().Unix()
-	logger := d.logger.WithFields(logrus.Fields{
-		"!":         "Enqu",
-		"_":         url,
-		"existing":  existing - now,
-		"timestamp": timestamp - now,
-	})
-
-	if now < existing && existing <= timestamp {
+	if now.Before(existing) && existing.Before(t) {
 		logger.Debug("Skipped")
 		return
 	}
 
-	d.queued.Store(url, timestamp)
+	d.queued.Store(url, t)
 	logger.Debug("Stored")
 
 	d.statsMutex.Lock()
@@ -257,19 +257,19 @@ func (d *daemon) step1Enqueue(url string, delay int64) {
 }
 
 func (d *daemon) step2Schedule(from string) {
-	var initialNext int64 = math.MaxInt64
+	now := time.Now()
+	initialNext := now.Add(24 * time.Hour)
 	next := initialNext
-	now := time.Now().Unix()
-	cutOff := now - d.delayMax
+	cutOff := now.Add(-d.cutOff)
+
+	if d.defaultSchedule > 0 {
+		next = now.Add(d.defaultSchedule)
+	}
 
 	d.queued.Range(func(key, value interface{}) bool {
-		if timestamp, ok := value.(int64); ok {
-			if timestamp > cutOff {
-				if timestamp < next {
-					next = timestamp
-				}
-			} else {
-				d.queued.Delete(key)
+		if t, ok := value.(time.Time); ok {
+			if cutOff.Before(t) && t.Before(next) {
+				next = t
 			}
 		} else {
 			d.queued.Delete(key)
@@ -281,49 +281,58 @@ func (d *daemon) step2Schedule(from string) {
 	logger := d.logger.WithFields(logrus.Fields{
 		"!":    "Sche",
 		"from": from,
+		"next": next.Sub(now).Seconds(),
 	})
-	timerNeeded := false
 
-	if next < initialNext {
+	var newCounter uint64
+	if next.Before(initialNext) {
+		timerNeeded := false
+
 		d.timerMutex.Lock()
 		timerOthersRunning := d.timerCounterTrigger < d.timerCounterSet
-		if !timerOthersRunning || next <= now {
+		timerSet := d.timerSet
+		if timerOthersRunning {
+			logger = logger.WithField("latest", timerSet.Sub(now).Seconds())
+			if next.Before(timerSet) {
+				timerNeeded = true
+			}
+		} else {
 			timerNeeded = true
+		}
+		if timerNeeded {
 			d.timerCounterSet++
-			d.timerTimestampSet = now
+			d.timerSet = now
+
+			newCounter = d.timerCounterSet
+			logger = logger.WithField("newCounter", newCounter)
 		}
 		d.timerMutex.Unlock()
-
-		logger = logger.WithFields(logrus.Fields{
-			"next":   next - now,
-			"others": internal.Ternary(timerOthersRunning, 1, 0),
-		})
 	}
 
-	if !timerNeeded {
+	if newCounter == 0 {
 		logger.Debug("Skipped")
 		return
 	}
 
-	go func(next, now int64) {
-		if next > now {
-			<-time.After(time.Second * time.Duration(next-now))
+	go func(next, now time.Time, counter uint64) {
+		if now.Before(next) {
+			<-time.After(next.Sub(now))
 		}
 
 		d.timerMutex.Lock()
 		d.timerCounterTrigger++
 		d.timerMutex.Unlock()
 
-		d.wakeUpSignal <- next
-	}(next, now)
+		d.wakeUpSignal <- counter
+	}(next, now, newCounter)
 	logger.Info("Set timer")
 }
 
-func (d *daemon) step3WakeUp() {
-	now := time.Now().Unix()
+func (d *daemon) step3WakeUp(counter uint64) {
+	now := time.Now()
 	logger := d.logger.WithFields(logrus.Fields{
-		"!":   "WkUp",
-		"now": now,
+		"!":       "WkUp",
+		"counter": counter,
 	})
 
 	d.wakeUpMutex.Lock()
@@ -334,17 +343,17 @@ func (d *daemon) step3WakeUp() {
 	var wg sync.WaitGroup
 
 	d.queued.Range(func(key, value interface{}) bool {
-		if timestamp, ok := value.(int64); ok {
-			if timestamp <= now {
+		if t, ok := value.(time.Time); ok {
+			if t.Before(now) {
 				wg.Add(1)
-				go func(key interface{}, timestamp int64) {
-					d.step4Hit(key, timestamp)
+				go func(key interface{}, t time.Time) {
+					d.step4Hit(key, t)
 					wg.Done()
-				}(key, timestamp)
+				}(key, t)
 			} else {
 				logger.WithFields(logrus.Fields{
-					"_":         key,
-					"timestamp": timestamp,
+					"_": key,
+					"t": t.Unix(),
 				}).Debug("Skipped hitting")
 			}
 		}
@@ -356,19 +365,19 @@ func (d *daemon) step3WakeUp() {
 
 	d.timerMutex.Lock()
 	d.timerCounterRun++
-	d.timerTimestampRun = now
+	d.timerRun = now
 	d.timerMutex.Unlock()
-
-	d.wakeUpMutex.Lock()
-	d.wakeUpCounterFinish++
-	d.wakeUpMutex.Unlock()
 
 	time.Sleep(d.coolDown)
 
 	d.step2Schedule("step3")
+
+	d.wakeUpMutex.Lock()
+	d.wakeUpCounterFinish++
+	d.wakeUpMutex.Unlock()
 }
 
-func (d *daemon) step4Hit(key interface{}, timestamp int64) {
+func (d *daemon) step4Hit(key interface{}, t time.Time) {
 	logger := d.logger.WithFields(logrus.Fields{
 		"!": "Hitt",
 		"_": key,
@@ -380,10 +389,21 @@ func (d *daemon) step4Hit(key interface{}, timestamp int64) {
 		return
 	}
 
+	d.statsMutex.Lock()
 	prevStats := d.loadStats(url)
-	prev := prevStats.LastHit - timestamp
-	logger = logger.WithField("prev", prev)
-	if prev >= 0 {
+	prevStats.CounterWakeUps++
+	d.stats[url] = prevStats
+	d.statsMutex.Unlock()
+
+	skip := false
+	if prevStats.CounterWakeUps > 1 {
+		lastHitSubT := prevStats.LastHit.Sub(t)
+		logger = logger.WithField("lastHitSubT", lastHitSubT)
+		if lastHitSubT > 0 {
+			skip = true
+		}
+	}
+	if skip {
 		logger.Debug("Skipped (already hit)")
 		return
 	}
@@ -394,9 +414,8 @@ func (d *daemon) step4Hit(key interface{}, timestamp int64) {
 
 	d.statsMutex.Lock()
 	stats := d.loadStats(url)
-	stats.CounterWakeUps++
 	stats.CounterLoops += loops
-	stats.LastHit = time.Now().Unix()
+	stats.LastHit = time.Now()
 	if err != nil {
 		stats.CounterErrors++
 		logger.WithError(err)
