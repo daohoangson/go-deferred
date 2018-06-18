@@ -116,7 +116,7 @@ func TestEnqueueZeroThirtyZero(t *testing.T) {
 	stats := getStats(t, d, url)
 	assert.Equal(t, uint64(3), stats.CounterEnqueues)
 	assert.Equal(t, uint64(1), stats.CounterLoops)
-	assert.Equal(t, uint64(2), stats.CounterWakeUps)
+	assert.Equal(t, uint64(3), stats.CounterWakeUps)
 }
 
 func getStats(t *testing.T, d *daemon, url string) *Stats {
@@ -152,8 +152,8 @@ func waitForDaemon(d *daemon) {
 		d.timerMutex.Lock()
 		timerCounterSet := d.timerCounterSet
 		timerCounterTrigger := d.timerCounterTrigger
-		timerSet := d.timerSet
-		timerRun := d.timerRun
+		timerSetFor := d.timerSetFor
+		timerRunAt := d.timerRunAt
 		d.timerMutex.Unlock()
 
 		d.wakeUpMutex.Lock()
@@ -162,7 +162,7 @@ func waitForDaemon(d *daemon) {
 		d.wakeUpMutex.Unlock()
 
 		if timerCounterTrigger == timerCounterSet &&
-			timerSet.Before(timerRun) &&
+			timerSetFor.Before(timerRunAt) &&
 			wakeUpCounterFinish == wakeUpCounterStart {
 			if !quit {
 				quit = true

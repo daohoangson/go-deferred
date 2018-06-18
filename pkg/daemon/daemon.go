@@ -32,8 +32,8 @@ type daemon struct {
 	timerCounterTrigger uint64
 	timerCounterRun     uint64
 	timerMutex          sync.Mutex
-	timerSet            time.Time
-	timerRun            time.Time
+	timerSetFor         time.Time
+	timerRunAt          time.Time
 
 	wakeUpCounterStart  uint64
 	wakeUpCounterFinish uint64
@@ -290,10 +290,10 @@ func (d *daemon) step2Schedule(from string) {
 
 		d.timerMutex.Lock()
 		timerOthersRunning := d.timerCounterTrigger < d.timerCounterSet
-		timerSet := d.timerSet
+		timerSetFor := d.timerSetFor
 		if timerOthersRunning {
-			logger = logger.WithField("latest", timerSet.Sub(now).Seconds())
-			if next.Before(timerSet) {
+			logger = logger.WithField("oldSetFor", timerSetFor.Sub(now).Seconds())
+			if next.Before(timerSetFor) {
 				timerNeeded = true
 			}
 		} else {
@@ -301,7 +301,7 @@ func (d *daemon) step2Schedule(from string) {
 		}
 		if timerNeeded {
 			d.timerCounterSet++
-			d.timerSet = now
+			d.timerSetFor = next
 
 			newCounter = d.timerCounterSet
 			logger = logger.WithField("newCounter", newCounter)
@@ -365,7 +365,7 @@ func (d *daemon) step3WakeUp(counter uint64) {
 
 	d.timerMutex.Lock()
 	d.timerCounterRun++
-	d.timerRun = now
+	d.timerRunAt = now
 	d.timerMutex.Unlock()
 
 	time.Sleep(d.coolDown)
