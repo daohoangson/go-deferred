@@ -413,10 +413,11 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 	prevStats := d.loadStats(url)
 	prevStats.CounterWakeUps++
 	d.stats[url] = prevStats
+	isURLFirstHit := prevStats.CounterWakeUps == 1
 	d.statsMutex.Unlock()
 
 	skip := false
-	if prevStats.CounterWakeUps > 1 {
+	if !isURLFirstHit {
 		lastHitSubT := prevStats.LastHit.Sub(t)
 		logger = logger.WithField("lastHitSubT", lastHitSubT)
 		if lastHitSubT > 0 {
