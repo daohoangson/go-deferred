@@ -443,4 +443,11 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 	}
 	d.stats[url] = stats
 	d.statsMutex.Unlock()
+
+	if err == nil {
+		logger.Debug("Succeeded")
+	} else {
+		logger.Error("Failed")
+		time.Sleep(d.coolDown)
+	}
 }
