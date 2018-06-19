@@ -35,7 +35,9 @@ func TestLoop(t *testing.T) {
 }
 
 func TestDefaultSchedule(t *testing.T) {
-	d := testInit()
+	d := testInit(
+		runner.MockedHit{},
+	)
 	d.defaultSchedule = time.Second / 4
 	url := "default-schedule"
 
@@ -65,7 +67,10 @@ func TestDefaultSchedule(t *testing.T) {
 }
 
 func TestEnqueueAfterHit(t *testing.T) {
-	d := testInit()
+	d := testInit(
+		runner.MockedHit{},
+		runner.MockedHit{},
+	)
 	url := "enqueue-after-hit"
 
 	d.enqueueNow(url)
@@ -100,7 +105,10 @@ func TestEnqueueDuringHit(t *testing.T) {
 
 func TestEnqueueZeroThirtyZero(t *testing.T) {
 	hit := time.Second / 2
-	d := testInit(runner.MockedHit{Duration: hit})
+	d := testInit(
+		runner.MockedHit{Duration: hit},
+		runner.MockedHit{},
+	)
 	url := "enqueue-0-3-0"
 
 	// this pattern mimics real world usage

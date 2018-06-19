@@ -434,8 +434,9 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 	d.statsMutex.Lock()
 	stats := d.loadStats(url)
 	stats.CounterLoops += loops
-	stats.LastHit = t.Add(time.Nanosecond)
-	if err != nil {
+	if err == nil {
+		stats.LastHit = t.Add(time.Nanosecond)
+	} else {
 		stats.CounterErrors++
 		logger.WithError(err)
 	}
