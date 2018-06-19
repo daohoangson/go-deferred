@@ -17,7 +17,7 @@ func GetHTTPClient() *http.Client {
 		}
 		_httpClient = &http.Client{
 			Transport: tr,
-			Timeout:   time.Minute * 10,
+			Timeout:   time.Minute + time.Second,
 		}
 	}
 
