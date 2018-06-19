@@ -47,7 +47,7 @@ func New(runner runner.Runner, logger *logrus.Logger) Daemon {
 
 func (d *daemon) ListenAndServe(port uint64) error {
 	addr := fmt.Sprintf(":%d", port)
-	d.logger.WithField("addr", addr).Info("Going to listen and serve now...")
+	d.logger.WithField("addr", addr).Warn("Going to listen and serve now...")
 
 	var f http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
 		code, err := d.serve(w, r)
@@ -319,10 +319,10 @@ func (d *daemon) step2Schedule(from string) {
 	if next.Before(initialNext) {
 		timerNeeded := false
 
-		oldTimerSoon := d.getTimerSoon()
-		if oldTimerSoon != nil {
-			logger = logger.WithField("oldTimerSoon", oldTimerSoon.Sub(now).Seconds())
-			if next.Before(*oldTimerSoon) {
+		oldNext := d.getTimerSoon()
+		if oldNext != nil {
+			logger = logger.WithField("oldNext", oldNext.Sub(now).Seconds())
+			if next.Before(*oldNext) {
 				timerNeeded = true
 			}
 		} else {
@@ -359,7 +359,7 @@ func (d *daemon) step3WakeUp(counter uint64) {
 	})
 
 	d.wakeUpMutex.Lock()
-	logger.Debug("Running...")
+	logger.Info("Running...")
 	d.wakeUpCounterStart++
 	d.wakeUpMutex.Unlock()
 
@@ -377,7 +377,7 @@ func (d *daemon) step3WakeUp(counter uint64) {
 				logger.WithFields(logrus.Fields{
 					"_": key,
 					"t": t.Unix(),
-				}).Debug("Skipped hitting")
+				}).Debug("Skipped")
 			}
 		}
 
@@ -424,10 +424,9 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 		}
 	}
 	if skip {
-		logger.Debug("Skipped (already hit)")
+		logger.Debug("Skipped")
 		return
 	}
-	logger.Debug("Starting...")
 
 	loops, _, err := runner.Loop(d.runner, url)
 	logger = logger.WithField("loops", loops)
@@ -442,6 +441,4 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 	}
 	d.stats[url] = stats
 	d.statsMutex.Unlock()
-
-	logger.Info("Done")
 }

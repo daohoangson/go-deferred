@@ -44,11 +44,11 @@ func Loop(r Runner, url string) (uint64, *Hit, error) {
 
 		data := result.Data
 		if len(data.Message) > 0 {
-			logger.Info(data.Message)
+			logger.Warn(data.Message)
 		}
 
 		if !data.MoreDeferred {
-			logger.Info("Stopped (no more)")
+			logger.Info("Stopped")
 			return loops, result, nil
 		}
 	}
@@ -74,7 +74,7 @@ func (r *runner) Hit(url string) (*Hit, error) {
 	}
 	req.Close = true
 
-	logger.Debug("Sending request...")
+	logger.Debug("Sending...")
 	resp, err := r.client.Do(req)
 	if err != nil {
 		logger.WithError(err).Error("Could not send request")
@@ -82,14 +82,14 @@ func (r *runner) Hit(url string) (*Hit, error) {
 	}
 
 	hit.TimeElapsed = time.Since(hit.TimeStart)
-	logger.WithField("elapsed", hit.TimeElapsed).Debug("Received response")
+	logger.WithField("elapsed", hit.TimeElapsed).Debug("Received")
 	err = json.NewDecoder(resp.Body).Decode(&hit.Data)
 	if err != nil {
 		logger.WithError(err).Error("Could not parse response")
 		return nil, err
 	}
 
-	logger.WithField("more?", internal.Ternary(hit.Data.MoreDeferred, 1, 0)).Info("Hit OK")
+	logger.WithField("more?", internal.Ternary(hit.Data.MoreDeferred, 1, 0)).Debug("Parsed")
 	return hit, nil
 }
 
