@@ -115,8 +115,20 @@ func TestEnqueueZeroThirtyZero(t *testing.T) {
 
 	stats := getStats(t, d, url)
 	assert.Equal(t, uint64(3), stats.CounterEnqueues)
-	assert.Equal(t, uint64(1), stats.CounterLoops)
 	assert.Equal(t, uint64(3), stats.CounterWakeUps)
+
+	/*
+		To understand loops value of 2, consider these job queues:
+		- After the 1st enqueue: queue = [ job1(t=0) ]
+		- After the 2nd enqueue: queue = [ job1(t=0), job2(t=3) ]
+		- After the 3rd enqueue: queue = [ job1(t=0), job3(t=0), job2(t=3) ]
+
+		That means job3 will run before job2:
+		- job1 -> loops = 1
+		- job2 -> loops (=1+1) = 2
+		- job3 -> url has been hit, no more loops
+	*/
+	assert.Equal(t, uint64(2), stats.CounterLoops)
 }
 
 func getStats(t *testing.T, d *daemon, url string) *Stats {
@@ -149,21 +161,13 @@ func waitForDaemon(d *daemon) {
 	quit := false
 
 	for {
-		d.timerMutex.Lock()
-		timerCounterSet := d.timerCounterSet
-		timerCounterTrigger := d.timerCounterTrigger
-		timerSetFor := d.timerSetFor
-		timerRunAt := d.timerRunAt
-		d.timerMutex.Unlock()
-
 		d.wakeUpMutex.Lock()
 		wakeUpCounterStart := d.wakeUpCounterStart
 		wakeUpCounterFinish := d.wakeUpCounterFinish
 		d.wakeUpMutex.Unlock()
 
-		if timerCounterTrigger == timerCounterSet &&
-			timerSetFor.Before(timerRunAt) &&
-			wakeUpCounterFinish == wakeUpCounterStart {
+		if wakeUpCounterFinish == wakeUpCounterStart &&
+			!d.hasTimers() {
 			if !quit {
 				quit = true
 			} else {

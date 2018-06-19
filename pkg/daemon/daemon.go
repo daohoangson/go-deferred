@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -28,12 +29,8 @@ type daemon struct {
 	stats      map[string]*Stats
 	statsMutex sync.Mutex
 
-	timerCounterSet     uint64
-	timerCounterTrigger uint64
-	timerCounterRun     uint64
-	timerMutex          sync.Mutex
-	timerSetFor         time.Time
-	timerRunAt          time.Time
+	timerCounter uint64
+	timers       sync.Map
 
 	wakeUpCounterStart  uint64
 	wakeUpCounterFinish uint64
@@ -119,6 +116,40 @@ func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 	}(d.wakeUpSignal)
 
 	logger.Debug("Initialized daemon")
+}
+
+func (d *daemon) getTimerSoon() *time.Time {
+	var soon *time.Time
+	now := time.Now()
+
+	d.timers.Range(func(key, value interface{}) bool {
+		if t, ok := value.(time.Time); ok {
+			if t.After(now) {
+				if soon == nil || t.Before(*soon) {
+					soon = &t
+				}
+			}
+		}
+
+		return true
+	})
+
+	return soon
+}
+
+func (d *daemon) hasTimers() bool {
+	result := false
+
+	d.timers.Range(func(key, value interface{}) bool {
+		if _, ok := value.(time.Time); ok {
+			result = true
+			return false
+		}
+
+		return true
+	})
+
+	return result
 }
 
 func (d *daemon) loadStats(url string) *Stats {
@@ -288,25 +319,19 @@ func (d *daemon) step2Schedule(from string) {
 	if next.Before(initialNext) {
 		timerNeeded := false
 
-		d.timerMutex.Lock()
-		timerOthersRunning := d.timerCounterTrigger < d.timerCounterSet
-		timerSetFor := d.timerSetFor
-		if timerOthersRunning {
-			logger = logger.WithField("oldSetFor", timerSetFor.Sub(now).Seconds())
-			if next.Before(timerSetFor) {
+		oldTimerSoon := d.getTimerSoon()
+		if oldTimerSoon != nil {
+			logger = logger.WithField("oldTimerSoon", oldTimerSoon.Sub(now).Seconds())
+			if next.Before(*oldTimerSoon) {
 				timerNeeded = true
 			}
 		} else {
 			timerNeeded = true
 		}
 		if timerNeeded {
-			d.timerCounterSet++
-			d.timerSetFor = next
-
-			newCounter = d.timerCounterSet
+			newCounter = atomic.AddUint64(&d.timerCounter, 1)
 			logger = logger.WithField("newCounter", newCounter)
 		}
-		d.timerMutex.Unlock()
 	}
 
 	if newCounter == 0 {
@@ -315,13 +340,11 @@ func (d *daemon) step2Schedule(from string) {
 	}
 
 	go func(next, now time.Time, counter uint64) {
+		d.timers.Store(counter, next)
+
 		if now.Before(next) {
 			<-time.After(next.Sub(now))
 		}
-
-		d.timerMutex.Lock()
-		d.timerCounterTrigger++
-		d.timerMutex.Unlock()
 
 		d.wakeUpSignal <- counter
 	}(next, now, newCounter)
@@ -363,17 +386,11 @@ func (d *daemon) step3WakeUp(counter uint64) {
 
 	wg.Wait()
 
-	d.timerMutex.Lock()
-	d.timerCounterRun++
-	d.timerRunAt = now
-	noMoreTimers := d.timerCounterTrigger == d.timerCounterSet
-	d.timerMutex.Unlock()
-
-	if noMoreTimers {
+	d.timers.Delete(counter)
+	if !d.hasTimers() {
 		time.Sleep(d.coolDown)
+		d.step2Schedule("step3")
 	}
-
-	d.step2Schedule("step3")
 
 	d.wakeUpMutex.Lock()
 	d.wakeUpCounterFinish++
@@ -418,7 +435,7 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 	d.statsMutex.Lock()
 	stats := d.loadStats(url)
 	stats.CounterLoops += loops
-	stats.LastHit = time.Now()
+	stats.LastHit = t.Add(time.Nanosecond)
 	if err != nil {
 		stats.CounterErrors++
 		logger.WithError(err)
