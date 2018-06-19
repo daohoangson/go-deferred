@@ -17,7 +17,9 @@ type mockedRunner struct {
 // MockedHit represents a hit for mocked runner
 type MockedHit struct {
 	Duration     time.Duration
+	Enqueue      int64
 	Error        error
+	HasEnqueue   bool
 	MoreDeferred bool
 }
 
@@ -32,29 +34,30 @@ func (m *mockedRunner) GetLogger() *logrus.Logger {
 	return internal.GetLogger()
 }
 
-func (m *mockedRunner) Hit(url string) (*Hit, error) {
-	var mHit *MockedHit
+func (m *mockedRunner) Hit(url string) (Hit, error) {
+	var mockedHit *MockedHit
+	hit := Hit{}
 
 	m.hitsMutex.Lock()
 	if len(m.hits) > 0 {
-		mHit, m.hits = &m.hits[0], m.hits[1:]
+		mockedHit, m.hits = &m.hits[0], m.hits[1:]
 	}
 	m.hitsMutex.Unlock()
 
-	if mHit == nil {
-		return nil, errors.New("No hit")
+	if mockedHit == nil {
+		return hit, errors.New("No hit")
 	}
 
-	if mHit.Duration > 0 {
-		time.Sleep(mHit.Duration)
+	if mockedHit.Duration > 0 {
+		time.Sleep(mockedHit.Duration)
 	}
 
-	if mHit.Error != nil {
-		return nil, mHit.Error
+	if mockedHit.Error != nil {
+		return hit, mockedHit.Error
 	}
 
-	hit := new(Hit)
-	hit.Data = new(Data)
-	hit.Data.MoreDeferred = mHit.MoreDeferred
+	hit.Data.MoreDeferred = mockedHit.MoreDeferred
+	hit.Enqueue = mockedHit.Enqueue
+	hit.HasEnqueue = mockedHit.HasEnqueue
 	return hit, nil
 }

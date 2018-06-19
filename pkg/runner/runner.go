@@ -3,6 +3,7 @@ package runner // import "github.com/daohoangson/go-deferred/pkg/runner"
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -22,45 +23,58 @@ func New(client *http.Client, logger *logrus.Logger) Runner {
 }
 
 // Loop keeps hitting the specified URL until there is no more jobs
-func Loop(r Runner, url string) (uint64, *Hit, error) {
-	var loops uint64
-
-	logger := r.GetLogger()
+func Loop(r Runner, url string) (Hits, error) {
+	hits := Hits{}
+	hits.TimeStart = time.Now()
+	var someError error
+	outerLogger := r.GetLogger().WithFields(logrus.Fields{
+		"!": "Loop",
+		"_": url,
+	})
 
 	for {
-		loops++
-		logger := logger.WithFields(logrus.Fields{
-			"!":     "Loop",
-			"_":     url,
-			"loops": loops,
-		})
+		innerLogger := outerLogger.WithField("seq", len(hits.List))
 
-		logger.Debug("Looping...")
-		result, err := r.Hit(url)
+		innerLogger.Debug("Looping...")
+		hit, err := r.Hit(url)
+		hits.List = append(hits.List, hit)
 		if err != nil {
-			logger.WithError(err).Error("Stopped")
-			return loops, nil, err
+			innerLogger = innerLogger.WithError(err)
+			someError = err
+			break
 		}
 
-		data := result.Data
+		data := hit.Data
 		if len(data.Message) > 0 {
-			logger.Warn(data.Message)
+			innerLogger.Warn(data.Message)
 		}
 
 		if !data.MoreDeferred {
-			logger.Info("Stopped")
-			return loops, result, nil
+			break
 		}
 	}
+
+	hits.TimeElapsed = time.Since(hits.TimeStart)
+	outerLogger = outerLogger.WithFields(logrus.Fields{
+		"elapsed": hits.TimeElapsed,
+		"len":     len(hits.List),
+	})
+
+	if someError != nil {
+		outerLogger.Error("Stopped")
+		return hits, someError
+	}
+
+	outerLogger.Info("Stopped")
+	return hits, nil
 }
 
 func (r *runner) GetLogger() *logrus.Logger {
 	return r.logger
 }
 
-func (r *runner) Hit(url string) (*Hit, error) {
-	hit := new(Hit)
-	hit.Data = new(Data)
+func (r *runner) Hit(url string) (Hit, error) {
+	hit := Hit{}
 	hit.TimeStart = time.Now()
 	logger := r.logger.WithFields(logrus.Fields{
 		"!": "Once",
@@ -70,23 +84,34 @@ func (r *runner) Hit(url string) (*Hit, error) {
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		logger.WithError(err).Error("Could not prepare request")
-		return nil, err
+		return hit, err
 	}
 	req.Close = true
+	req.Header.Set(internal.GetProtocolVersionHeaderKey(), internal.GetProtocolVersion())
 
 	logger.Debug("Sending...")
 	resp, err := r.client.Do(req)
-	if err != nil {
-		logger.WithError(err).Error("Could not send request")
-		return nil, err
-	}
-
 	hit.TimeElapsed = time.Since(hit.TimeStart)
 	logger.WithField("elapsed", hit.TimeElapsed).Debug("Received")
+
+	if err != nil {
+		logger.WithError(err).Error("Could not send request")
+		return hit, err
+	}
+
 	err = json.NewDecoder(resp.Body).Decode(&hit.Data)
 	if err != nil {
 		logger.WithError(err).Error("Could not parse response")
-		return nil, err
+		return hit, err
+	}
+
+	enqueueValue := resp.Header.Get(internal.GetProtocolEnqueueHeaderKey())
+	if len(enqueueValue) > 0 {
+		if enqueue, err := strconv.ParseInt(enqueueValue, 10, 64); err == nil {
+			hit.HasEnqueue = true
+			hit.Enqueue = enqueue
+			logger = logger.WithField("enqueue", enqueue)
+		}
 	}
 
 	logger.WithField("more?", internal.Ternary(hit.Data.MoreDeferred, 1, 0)).Debug("Parsed")

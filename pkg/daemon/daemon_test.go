@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/daohoangson/go-deferred/pkg/runner"
 	"github.com/stretchr/testify/assert"
 )
@@ -139,6 +138,21 @@ func TestEnqueueZeroThirtyZero(t *testing.T) {
 	assert.Equal(t, uint64(2), stats.CounterLoops)
 }
 
+func TestReenqueueFromHit(t *testing.T) {
+	d := testInit(
+		runner.MockedHit{Enqueue: 1, HasEnqueue: true},
+		runner.MockedHit{},
+	)
+	url := "reenqueue-from-hit"
+
+	d.enqueueNow(url)
+	waitForDaemon(d)
+
+	stats := getStats(t, d, url)
+	assert.Equal(t, uint64(2), stats.CounterEnqueues)
+	assert.Equal(t, uint64(2), stats.CounterLoops)
+}
+
 func getStats(t *testing.T, d *daemon, url string) *Stats {
 	d.statsMutex.Lock()
 	stats, _ := d.stats[url]
@@ -152,11 +166,8 @@ func getStats(t *testing.T, d *daemon, url string) *Stats {
 func testInit(hits ...runner.MockedHit) *daemon {
 	runner := runner.NewMocked(hits)
 
-	logger := logrus.New()
-	logger.SetLevel(logrus.DebugLevel)
-
 	d := &daemon{}
-	d.init(runner, logger)
+	d.init(runner, nil)
 
 	d.coolDown = time.Duration(time.Second / 4)
 	d.cutOff = time.Duration(3 * d.coolDown)

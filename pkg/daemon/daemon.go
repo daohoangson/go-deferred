@@ -82,6 +82,10 @@ func (d *daemon) enqueueNow(url string) {
 	d.step1Enqueue(url, 0)
 }
 
+func (d *daemon) enqueueSeconds(url string, seconds int64) {
+	d.step1Enqueue(url, time.Duration(seconds)*time.Second)
+}
+
 func (d *daemon) init(r runner.Runner, logger *logrus.Logger) {
 	if logger == nil {
 		logger = internal.GetLogger()
@@ -212,7 +216,7 @@ func (d *daemon) serveQueue(w http.ResponseWriter, u *url.URL) (int, error) {
 	}
 
 	delay, _ := strconv.ParseInt(delayValue, 10, 64)
-	go d.step1Enqueue(target, time.Duration(delay)*time.Second)
+	go d.enqueueSeconds(target, delay)
 
 	return http.StatusAccepted, nil
 }
@@ -348,7 +352,7 @@ func (d *daemon) step2Schedule(from string) {
 
 		d.wakeUpSignal <- counter
 	}(next, now, newCounter)
-	logger.Info("Set timer")
+	logger.Info("Scheduled")
 }
 
 func (d *daemon) step3WakeUp(counter uint64) {
@@ -429,12 +433,16 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 		return
 	}
 
-	loops, _, err := runner.Loop(d.runner, url)
-	logger = logger.WithField("loops", loops)
+	hits, err := runner.Loop(d.runner, url)
+	counter := len(hits.List)
+	logger = logger.WithFields(logrus.Fields{
+		"counter": counter,
+		"elapsed": hits.TimeElapsed,
+	})
 
 	d.statsMutex.Lock()
 	stats := d.loadStats(url)
-	stats.CounterLoops += loops
+	stats.CounterLoops += uint64(counter)
 	if err == nil {
 		stats.LastHit = t.Add(time.Nanosecond)
 	} else {
@@ -445,6 +453,13 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 	d.statsMutex.Unlock()
 
 	if err == nil {
+		// hits will always have at least one hit
+		lastHit := hits.List[counter-1]
+		if lastHit.HasEnqueue {
+			logger = logger.WithField("enqueue", lastHit.Enqueue)
+			d.enqueueSeconds(url, lastHit.Enqueue)
+		}
+
 		logger.Debug("Succeeded")
 	} else {
 		logger.Error("Failed")
