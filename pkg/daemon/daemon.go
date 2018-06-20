@@ -259,7 +259,10 @@ func (d *daemon) serveStats(w http.ResponseWriter, u *url.URL) (int, error) {
 
 func (d *daemon) step1Enqueue(url string, delay time.Duration) {
 	now := time.Now()
-	t := now.Add(delay)
+	t := now
+	if delay > 0 {
+		t = t.Add(delay)
+	}
 	logger := d.logger.WithFields(logrus.Fields{
 		"!": "Enqu",
 		"_": url,

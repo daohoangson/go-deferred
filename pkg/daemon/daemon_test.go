@@ -65,6 +65,17 @@ func TestDefaultSchedule(t *testing.T) {
 	d.wakeUpSignal <- 0
 }
 
+func TestEnqueueNegative(t *testing.T) {
+	d := testInit(runner.MockedHit{})
+	url := "enqueue-negative"
+
+	d.enqueueSeconds(url, -1)
+	waitForDaemon(d)
+
+	stats := getStats(t, d, url)
+	assert.Equal(t, uint64(1), stats.CounterLoops)
+}
+
 func TestEnqueueAfterHit(t *testing.T) {
 	d := testInit(
 		runner.MockedHit{},
