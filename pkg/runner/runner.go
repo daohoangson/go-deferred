@@ -13,6 +13,8 @@ import (
 type runner struct {
 	client *http.Client
 	logger *logrus.Logger
+
+	maxHitsPerLoop uint64
 }
 
 // New returns a new Runner instance
@@ -26,6 +28,8 @@ func New(client *http.Client, logger *logrus.Logger) Runner {
 func Loop(r Runner, url string) (Hits, error) {
 	hits := Hits{}
 	hits.TimeStart = time.Now()
+	maxHitsPerLoop := r.GetMaxHitsPerLoop()
+
 	var someError error
 	outerLogger := r.GetLogger().WithFields(logrus.Fields{
 		"!": "Loop",
@@ -52,6 +56,11 @@ func Loop(r Runner, url string) (Hits, error) {
 		if !data.MoreDeferred {
 			break
 		}
+
+		if maxHitsPerLoop > 0 && uint64(len(hits.List)) == maxHitsPerLoop {
+			innerLogger.Warn("Reached max hits per loop")
+			break
+		}
 	}
 
 	hits.TimeElapsed = time.Since(hits.TimeStart)
@@ -71,6 +80,10 @@ func Loop(r Runner, url string) (Hits, error) {
 
 func (r *runner) GetLogger() *logrus.Logger {
 	return r.logger
+}
+
+func (r *runner) GetMaxHitsPerLoop() uint64 {
+	return r.maxHitsPerLoop
 }
 
 func (r *runner) Hit(url string) (Hit, error) {
@@ -128,6 +141,8 @@ func (r *runner) init(client *http.Client, logger *logrus.Logger) {
 		logger = internal.GetLogger()
 	}
 	r.logger = logger
+
+	r.maxHitsPerLoop = 5
 
 	logger.Debug("Initialized runner")
 }

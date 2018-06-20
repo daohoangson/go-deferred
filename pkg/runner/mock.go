@@ -12,6 +12,8 @@ import (
 type mockedRunner struct {
 	hits      []MockedHit
 	hitsMutex sync.Mutex
+
+	maxHitsPerLoop uint64
 }
 
 // MockedHit represents a hit for mocked runner
@@ -24,14 +26,19 @@ type MockedHit struct {
 }
 
 // NewMocked returns a mocked Runner instance
-func NewMocked(hits []MockedHit) Runner {
+func NewMocked(hits []MockedHit, maxHitsPerLoop uint64) Runner {
 	m := &mockedRunner{}
 	m.hits = hits
+	m.maxHitsPerLoop = maxHitsPerLoop
 	return m
 }
 
 func (m *mockedRunner) GetLogger() *logrus.Logger {
 	return internal.GetLogger()
+}
+
+func (m *mockedRunner) GetMaxHitsPerLoop() uint64 {
+	return m.maxHitsPerLoop
 }
 
 func (m *mockedRunner) Hit(url string) (Hit, error) {

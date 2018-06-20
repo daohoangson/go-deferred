@@ -90,7 +90,6 @@ func TestEnqueueAfterHit(t *testing.T) {
 	waitForDaemon(d)
 
 	stats := getStats(t, d, url)
-	assert.Equal(t, uint64(2), stats.CounterEnqueues)
 	assert.Equal(t, uint64(2), stats.CounterLoops)
 }
 
@@ -109,7 +108,6 @@ func TestEnqueueDuringHit(t *testing.T) {
 	waitForDaemon(d)
 
 	stats := getStats(t, d, url)
-	assert.Equal(t, uint64(2), stats.CounterEnqueues)
 	assert.Equal(t, uint64(2), stats.CounterLoops)
 }
 
@@ -125,7 +123,7 @@ func TestEnqueueZeroThirtyZero(t *testing.T) {
 	d.enqueueNow(url)
 	time.Sleep(hit / 4)
 
-	d.step1Enqueue(url, 3*time.Second)
+	d.enqueueSeconds(url, 3)
 	time.Sleep(hit / 2)
 
 	d.enqueueNow(url)
@@ -164,6 +162,95 @@ func TestReenqueueFromHit(t *testing.T) {
 	assert.Equal(t, uint64(2), stats.CounterLoops)
 }
 
+func TestAutoEnqueueOnMaxHits(t *testing.T) {
+	hits := []runner.MockedHit{
+		runner.MockedHit{MoreDeferred: true},
+		runner.MockedHit{MoreDeferred: true},
+		runner.MockedHit{MoreDeferred: true},
+		runner.MockedHit{},
+	}
+	runner := runner.NewMocked(hits, 3)
+	d := &daemon{}
+	d.init(runner, nil)
+	configDaemon(d)
+	url := "auto-enqueue-on-max-hits"
+
+	d.enqueueNow(url)
+	waitForDaemon(d)
+
+	stats := getStats(t, d, url)
+	assert.Equal(t, uint64(2), stats.CounterEnqueues)
+	assert.Equal(t, uint64(4), stats.CounterLoops)
+}
+
+func TestMultiTwoAtOnce(t *testing.T) {
+	d := testInit(
+		runner.MockedHit{},
+		runner.MockedHit{},
+	)
+	url1 := "multi-two-at-once-1"
+	url2 := "multi-two-at-once-2"
+
+	d.enqueueNow(url1)
+	d.enqueueNow(url2)
+	waitForDaemon(d)
+
+	stats1 := getStats(t, d, url1)
+	assert.Equal(t, uint64(1), stats1.CounterLoops)
+
+	stats2 := getStats(t, d, url2)
+	assert.Equal(t, uint64(1), stats2.CounterLoops)
+}
+
+func TestMultiTwoOneAfterAnother(t *testing.T) {
+	d := testInit(
+		runner.MockedHit{},
+		runner.MockedHit{},
+	)
+	url1 := "multi-two-one-after-another-1"
+	url2 := "multi-two-one-after-another-2"
+
+	d.enqueueNow(url1)
+	time.Sleep(time.Second)
+
+	d.enqueueNow(url2)
+	waitForDaemon(d)
+
+	stats1 := getStats(t, d, url1)
+	assert.Equal(t, uint64(1), stats1.CounterLoops)
+
+	stats2 := getStats(t, d, url2)
+	assert.Equal(t, uint64(1), stats2.CounterLoops)
+}
+
+func TestMultiOneDuringAnother(t *testing.T) {
+	hit := time.Second / 4
+	d := testInit(
+		runner.MockedHit{Duration: hit},
+		runner.MockedHit{},
+	)
+	url1 := "multi-two-one-during-another-1"
+	url2 := "multi-two-one-during-another-2"
+
+	d.enqueueNow(url1)
+	time.Sleep(time.Second + hit/2)
+
+	d.enqueueNow(url2)
+	waitForDaemon(d)
+
+	stats1 := getStats(t, d, url1)
+	assert.Equal(t, uint64(1), stats1.CounterLoops)
+
+	stats2 := getStats(t, d, url2)
+	assert.Equal(t, uint64(1), stats2.CounterLoops)
+}
+
+func configDaemon(d *daemon) {
+	d.coolDown = time.Duration(time.Second / 4)
+	d.cutOff = time.Duration(3 * d.coolDown)
+	d.defaultSchedule = 0
+}
+
 func getStats(t *testing.T, d *daemon, url string) *Stats {
 	d.statsMutex.Lock()
 	stats, _ := d.stats[url]
@@ -175,14 +262,12 @@ func getStats(t *testing.T, d *daemon, url string) *Stats {
 }
 
 func testInit(hits ...runner.MockedHit) *daemon {
-	runner := runner.NewMocked(hits)
+	runner := runner.NewMocked(hits, 0)
 
 	d := &daemon{}
 	d.init(runner, nil)
 
-	d.coolDown = time.Duration(time.Second / 4)
-	d.cutOff = time.Duration(3 * d.coolDown)
-	d.defaultSchedule = 0
+	configDaemon(d)
 
 	return d
 }
