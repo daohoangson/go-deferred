@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/daohoangson/go-deferred.svg?branch=master)](https://travis-ci.org/daohoangson/go-deferred)
 
-[![Docker Hub](https://images.microbadger.com/badges/image/daohoangson/go-deferred.svg)](https://microbadger.com/images/daohoangson/go-deferrer)
+[![Docker Hub](https://images.microbadger.com/badges/image/daohoangson/go-deferred.svg)](https://microbadger.com/images/daohoangson/go-deferred)
 
 ## Docker usage
 
