@@ -7,7 +7,9 @@ _gitHead=`git rev-parse HEAD`
 _tagged="$_imageName:$_gitHead"
 
 echo "Building image $_tagged"
-docker build . -t "$_imageName" -t "$_tagged"
+docker build . \
+  --build-arg VCS_REF=`git rev-parse --short HEAD` \
+  -t "$_imageName" -t "$_tagged"
 
 _push=$PUSH
 if [ -z "$_push" ]; then

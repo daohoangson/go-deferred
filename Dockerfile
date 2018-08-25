@@ -14,6 +14,10 @@ RUN cd "$DEFERRED_SOURCE_PATH" \
 
 FROM debian:stretch-slim
 
+ARG VCS_REF
+LABEL org.label-schema.vcs-ref=$VCS_REF \
+      org.label-schema.vcs-url="https://github.com/daohoangson/go-deferred"
+
 COPY --from=builder /go/bin/* /usr/local/bin/
 
 COPY . /app
