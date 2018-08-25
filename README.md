@@ -1,5 +1,7 @@
 # go-deferred
 
+[![Build Status](https://travis-ci.org/daohoangson/go-deferred.svg?branch=master)](https://travis-ci.org/daohoangson/go-deferred)
+
 ## Docker usage
 
 ### Runner mode
