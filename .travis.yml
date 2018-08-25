@@ -2,6 +2,9 @@ language: go
 sudo: required
 services:
   - docker
+branches:
+  only:
+  - master
 
 before_install:
   - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
