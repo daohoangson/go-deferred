@@ -2,7 +2,7 @@
 
 set -e
 
-_imageName=${1:-'xfrocks/go-deferred'}
+_imageName=${1:-'daohoangson/go-deferred'}
 _gitHead=`git rev-parse HEAD`
 _tagged="$_imageName:$_gitHead"
 

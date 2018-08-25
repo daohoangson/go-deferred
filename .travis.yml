@@ -1,8 +1,14 @@
+language: go
 sudo: required
-
 services:
   - docker
 
 before_install:
   - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-  - PUSH=yes ./scripts/build-and-push.sh
+
+jobs:
+  include:
+    - stage: test
+      script: ./scripts/test.sh
+    - stage: build
+      script: PUSH=yes ./scripts/build-and-push.sh
