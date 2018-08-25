@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/daohoangson/go-deferred/pkg/runner"
 )
@@ -15,18 +14,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	var wg sync.WaitGroup
+	urlCount := len(args) - 1
+	exitCodes := make(chan int, urlCount)
 	r := runner.New(nil, nil)
 
-	for i := 1; i < len(args); i++ {
-		wg.Add(1)
+	for i := 0; i < urlCount; i++ {
+		url := args[i+1]
+		go func(workerID int, url string, exitCodes chan int) {
+			_, err := runner.Loop(r, url)
 
-		url := args[i]
-		go func(workerID int, url string) {
-			defer wg.Done()
-			runner.Loop(r, url)
-		}(i, url)
+			exitCode := 0
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error processing %s: %s\n", url, err)
+				exitCode = 2
+			}
+
+			exitCodes <- exitCode
+		}(i, url, exitCodes)
 	}
 
-	wg.Wait()
+	summaryExitCode := 0
+	for i := 0; i < urlCount; i++ {
+		exitCode := <-exitCodes
+		if exitCode > summaryExitCode {
+			summaryExitCode = exitCode
+		}
+	}
+
+	os.Exit(summaryExitCode)
 }
