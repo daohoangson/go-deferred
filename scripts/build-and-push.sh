@@ -9,14 +9,19 @@ _tagged="$_imageName:$_gitHead"
 echo "Building image $_tagged"
 docker build . -t "$_imageName" -t "$_tagged"
 
-while true
-do
-  read -p "Push image? [yN]" yn
-  case $yn in
-    [Yy]* ) break;;
-    * ) exit;;
-  esac
-done
+_push=$PUSH
+if [ -z "$_push" ]; then
+  while true
+  do
+    read -p "Push image? [yN]" yn
+    case $yn in
+      [Yy]* ) break;;
+      * ) exit;;
+    esac
+  done
+elif [ "x$_push" != 'xyes' ]; then
+  exit
+fi
 
 docker push "$_imageName:latest"
 docker push "$_tagged"
