@@ -23,7 +23,7 @@ func GetHTTPClient() *http.Client {
 		timeoutInSecondsValue := os.Getenv("DEFERRED_HTTP_CLIENT_TIMEOUT_IN_SECONDS")
 		if len(timeoutInSecondsValue) > 0 {
 			if timeoutInSeconds, err := strconv.ParseInt(timeoutInSecondsValue, 10, 64); err == nil {
-				timeout := time.Duration(timeoutInSeconds) * time.Second
+				timeout = time.Duration(timeoutInSeconds) * time.Second
 				fmt.Printf("timeout=%s\n", timeout)
 			}
 		}
