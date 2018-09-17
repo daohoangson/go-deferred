@@ -34,6 +34,7 @@ docker run --rm -p 8080:8080 daohoangson/go-deferred defermon 8080 s3cr3t
 
 Just clone this repo and push to deploy the daemon on Heroku / Dokku. Some useful environment variables:
 
+- `DEFERRED_HTTP_CLIENT_TIMEOUT_IN_SECONDS` default=`61`
 - `DEFERRED_LOG_LEVEL` default=`info`
 - `DEFERRED_MAX_HITS_PER_LOOP` default=`5`
 - `DEFERMON_PORT` default=`80`
