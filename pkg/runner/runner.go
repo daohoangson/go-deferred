@@ -3,6 +3,7 @@ package runner // import "github.com/daohoangson/go-deferred/pkg/runner"
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -143,6 +144,13 @@ func (r *runner) init(client *http.Client, logger *logrus.Logger) {
 	r.logger = logger
 
 	r.maxHitsPerLoop = 5
+	maxHitsPerLoopValue := os.Getenv("DEFERRED_MAX_HITS_PER_LOOP")
+	if len(maxHitsPerLoopValue) > 0 {
+		if maxHitsPerLoop, err := strconv.ParseUint(maxHitsPerLoopValue, 10, 64); err == nil {
+			r.maxHitsPerLoop = maxHitsPerLoop
+			logger.WithField("maxHitsPerLoop", maxHitsPerLoop).Info("Updated max hits per loop")
+		}
+	}
 
 	logger.Debug("Initialized runner")
 }
