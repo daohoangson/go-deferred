@@ -22,6 +22,7 @@ type MockedHit struct {
 	Enqueue      int64
 	Error        error
 	HasEnqueue   bool
+	More         bool
 	MoreDeferred bool
 }
 
@@ -63,6 +64,7 @@ func (m *mockedRunner) Hit(url string) (Hit, error) {
 		return hit, mockedHit.Error
 	}
 
+	hit.Data.More = mockedHit.More
 	hit.Data.MoreDeferred = mockedHit.MoreDeferred
 	hit.Enqueue = mockedHit.Enqueue
 	hit.HasEnqueue = mockedHit.HasEnqueue

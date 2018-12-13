@@ -10,6 +10,9 @@ import (
 type Data struct {
 	Message      string
 	MoreDeferred bool
+
+	// XenForo 2 job.php
+	More bool
 }
 
 // Hit represents a successful hit

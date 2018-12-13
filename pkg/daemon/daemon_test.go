@@ -33,6 +33,20 @@ func TestLoop(t *testing.T) {
 	assert.Equal(t, uint64(2), stats.CounterLoops)
 }
 
+func TestLoopXf2(t *testing.T) {
+	d := testInit(
+		runner.MockedHit{More: true},
+		runner.MockedHit{},
+	)
+	url := "loop-xf2"
+
+	d.enqueueNow(url)
+	waitForDaemon(d)
+
+	stats := getStats(t, d, url)
+	assert.Equal(t, uint64(2), stats.CounterLoops)
+}
+
 func TestDefaultSchedule(t *testing.T) {
 	d := testInit(
 		runner.MockedHit{},

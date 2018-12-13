@@ -461,7 +461,7 @@ func (d *daemon) step4Hit(key interface{}, t time.Time) {
 		if lastHit.HasEnqueue {
 			logger = logger.WithField("enqueue", lastHit.Enqueue)
 			d.enqueueSeconds(url, lastHit.Enqueue)
-		} else if lastHit.Data.MoreDeferred {
+		} else if lastHit.Data.MoreDeferred || lastHit.Data.More {
 			logger = logger.WithField("more?", 1)
 			d.enqueueNow(url)
 		}

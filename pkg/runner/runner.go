@@ -54,7 +54,7 @@ func Loop(r Runner, url string) (Hits, error) {
 			innerLogger.Warn(data.Message)
 		}
 
-		if !data.MoreDeferred {
+		if !data.MoreDeferred && !data.More {
 			break
 		}
 
@@ -128,7 +128,7 @@ func (r *runner) Hit(url string) (Hit, error) {
 		}
 	}
 
-	logger.WithField("more?", internal.Ternary(hit.Data.MoreDeferred, 1, 0)).Debug("Parsed")
+	logger.WithField("more?", internal.Ternary(hit.Data.MoreDeferred || hit.Data.More, 1, 0)).Debug("Parsed")
 	return hit, nil
 }
 
