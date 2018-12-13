@@ -11,6 +11,9 @@ docker build . \
   --build-arg VCS_REF=`git rev-parse --short HEAD` \
   -t "$_imageName" -t "$_tagged"
 
+echo "Testing image $_tagged"
+docker run --rm "$_tagged" deferred https://xfrocks.com/deferred.php
+
 _push=$PUSH
 if [ -z "$_push" ]; then
   while true

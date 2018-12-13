@@ -1,4 +1,4 @@
-FROM golang:1.10.3-stretch as builder
+FROM golang:1.11.2-stretch as builder
 
 ENV DEFERRED_RELATIVE_PATH "github.com/daohoangson/go-deferred"
 ENV DEFERRED_SOURCE_PATH "$GOPATH/src/$DEFERRED_RELATIVE_PATH"
