@@ -33,6 +33,8 @@ type Hits struct {
 
 // Runner represents an object that can hit deferred.php targets
 type Runner interface {
+	GetCooldownDuration() time.Duration
+	GetErrorsBeforeQuitting() uint64
 	GetLogger() *logrus.Logger
 	GetMaxHitsPerLoop() uint64
 	Hit(url string) (Hit, error)

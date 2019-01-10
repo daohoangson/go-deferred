@@ -13,7 +13,8 @@ type mockedRunner struct {
 	hits      []MockedHit
 	hitsMutex sync.Mutex
 
-	maxHitsPerLoop uint64
+	errorsBeforeQuitting uint64
+	maxHitsPerLoop       uint64
 }
 
 // MockedHit represents a hit for mocked runner
@@ -30,8 +31,18 @@ type MockedHit struct {
 func NewMocked(hits []MockedHit, maxHitsPerLoop uint64) Runner {
 	m := &mockedRunner{}
 	m.hits = hits
+
 	m.maxHitsPerLoop = maxHitsPerLoop
+
 	return m
+}
+
+func (m *mockedRunner) GetCooldownDuration() time.Duration {
+	return time.Millisecond
+}
+
+func (m *mockedRunner) GetErrorsBeforeQuitting() uint64 {
+	return m.errorsBeforeQuitting
 }
 
 func (m *mockedRunner) GetLogger() *logrus.Logger {

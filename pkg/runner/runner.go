@@ -15,7 +15,9 @@ type runner struct {
 	client *http.Client
 	logger *logrus.Logger
 
-	maxHitsPerLoop uint64
+	cooldownDuration     time.Duration
+	errorsBeforeQuitting uint64
+	maxHitsPerLoop       uint64
 }
 
 // New returns a new Runner instance
@@ -29,8 +31,10 @@ func New(client *http.Client, logger *logrus.Logger) Runner {
 func Loop(r Runner, url string) (Hits, error) {
 	hits := Hits{}
 	hits.TimeStart = time.Now()
+	errorsBeforeQuitting := r.GetErrorsBeforeQuitting()
 	maxHitsPerLoop := r.GetMaxHitsPerLoop()
 
+	var consecutiveErrorCount = uint64(0)
 	var someError error
 	outerLogger := r.GetLogger().WithFields(logrus.Fields{
 		"!": "Loop",
@@ -40,13 +44,27 @@ func Loop(r Runner, url string) (Hits, error) {
 	for {
 		innerLogger := outerLogger.WithField("seq", len(hits.List))
 
-		innerLogger.Debug("Looping...")
+		if consecutiveErrorCount > 0 {
+			sleepDuration := r.GetCooldownDuration()
+			time.Sleep(sleepDuration)
+			innerLogger.WithField("duration", sleepDuration).Warn("Cooling down...")
+		} else {
+			innerLogger.Debug("Looping...")
+		}
+
 		hit, err := r.Hit(url)
 		hits.List = append(hits.List, hit)
 		if err != nil {
 			innerLogger = innerLogger.WithError(err)
 			someError = err
-			break
+
+			consecutiveErrorCount++
+			if consecutiveErrorCount > errorsBeforeQuitting {
+				break
+			}
+		} else {
+			consecutiveErrorCount = 0
+			someError = nil
 		}
 
 		data := hit.Data
@@ -54,7 +72,7 @@ func Loop(r Runner, url string) (Hits, error) {
 			innerLogger.Warn(data.Message)
 		}
 
-		if !data.MoreDeferred && !data.More {
+		if someError == nil && !data.MoreDeferred && !data.More {
 			break
 		}
 
@@ -77,6 +95,14 @@ func Loop(r Runner, url string) (Hits, error) {
 
 	outerLogger.Info("Stopped")
 	return hits, nil
+}
+
+func (r *runner) GetCooldownDuration() time.Duration {
+	return r.cooldownDuration
+}
+
+func (r *runner) GetErrorsBeforeQuitting() uint64 {
+	return r.errorsBeforeQuitting
 }
 
 func (r *runner) GetLogger() *logrus.Logger {
@@ -143,12 +169,30 @@ func (r *runner) init(client *http.Client, logger *logrus.Logger) {
 	}
 	r.logger = logger
 
+	r.cooldownDuration = time.Minute
+	cooldownDurationInSecondsValue := os.Getenv("DEFERRED_COOLDOWN_DURATION_IN_SECONDS")
+	if len(cooldownDurationInSecondsValue) > 0 {
+		if cooldownDurationInSeconds, err := strconv.ParseInt(cooldownDurationInSecondsValue, 10, 64); err == nil {
+			r.cooldownDuration = time.Duration(cooldownDurationInSeconds) * time.Second
+			logger.WithField("value", r.cooldownDuration).Info("Updated cooldown duration")
+		}
+	}
+
+	r.errorsBeforeQuitting = 3
+	errorsBeforeQuittingValue := os.Getenv("DEFERRED_ERRORS_BEFORE_QUITTING")
+	if len(errorsBeforeQuittingValue) > 0 {
+		if errorsBeforeQuitting, err := strconv.ParseUint(errorsBeforeQuittingValue, 10, 64); err == nil {
+			r.errorsBeforeQuitting = errorsBeforeQuitting
+			logger.WithField("value", errorsBeforeQuitting).Info("Updated errors before quitting")
+		}
+	}
+
 	r.maxHitsPerLoop = 5
 	maxHitsPerLoopValue := os.Getenv("DEFERRED_MAX_HITS_PER_LOOP")
 	if len(maxHitsPerLoopValue) > 0 {
 		if maxHitsPerLoop, err := strconv.ParseUint(maxHitsPerLoopValue, 10, 64); err == nil {
 			r.maxHitsPerLoop = maxHitsPerLoop
-			logger.WithField("maxHitsPerLoop", maxHitsPerLoop).Info("Updated max hits per loop")
+			logger.WithField("value", maxHitsPerLoop).Info("Updated max hits per loop")
 		}
 	}
 
