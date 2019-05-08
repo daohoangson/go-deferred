@@ -41,6 +41,10 @@ func (m *mockedRunner) GetCooldownDuration() time.Duration {
 	return time.Millisecond
 }
 
+func (m *mockedRunner) GetDumpResponseOnParseError() bool {
+	return false
+}
+
 func (m *mockedRunner) GetErrorsBeforeQuitting() uint64 {
 	return m.errorsBeforeQuitting
 }

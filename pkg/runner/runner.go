@@ -2,6 +2,8 @@ package runner // import "github.com/daohoangson/go-deferred/pkg/runner"
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -15,9 +17,10 @@ type runner struct {
 	client *http.Client
 	logger *logrus.Logger
 
-	cooldownDuration     time.Duration
-	errorsBeforeQuitting uint64
-	maxHitsPerLoop       uint64
+	cooldownDuration         time.Duration
+	dumpResponseOnParseError bool
+	errorsBeforeQuitting     uint64
+	maxHitsPerLoop           uint64
 }
 
 // New returns a new Runner instance
@@ -46,8 +49,11 @@ func Loop(r Runner, url string) (Hits, error) {
 
 		if consecutiveErrorCount > 0 {
 			sleepDuration := r.GetCooldownDuration()
+			innerLogger.WithFields(logrus.Fields{
+				"duration": sleepDuration,
+				"errors":   fmt.Sprintf("%d/%d", consecutiveErrorCount, errorsBeforeQuitting),
+			}).Warn("Cooling down...")
 			time.Sleep(sleepDuration)
-			innerLogger.WithField("duration", sleepDuration).Warn("Cooling down...")
 		} else {
 			innerLogger.Debug("Looping...")
 		}
@@ -101,6 +107,10 @@ func (r *runner) GetCooldownDuration() time.Duration {
 	return r.cooldownDuration
 }
 
+func (r *runner) GetDumpResponseOnParseError() bool {
+	return r.dumpResponseOnParseError
+}
+
 func (r *runner) GetErrorsBeforeQuitting() uint64 {
 	return r.errorsBeforeQuitting
 }
@@ -139,9 +149,20 @@ func (r *runner) Hit(url string) (Hit, error) {
 		return hit, err
 	}
 
-	err = json.NewDecoder(resp.Body).Decode(&hit.Data)
+	responseBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		logger.WithError(err).Error("Could not parse response")
+		logger.WithError(err).Error("Could not read response")
+		return hit, err
+	}
+
+	err = json.Unmarshal(responseBody, &hit.Data)
+	if err != nil {
+		logger.WithError(err).WithField("status", resp.StatusCode).Error("Could not parse response")
+
+		if r.GetDumpResponseOnParseError() {
+			os.Stderr.Write(responseBody)
+		}
+
 		return hit, err
 	}
 
@@ -176,6 +197,14 @@ func (r *runner) init(client *http.Client, logger *logrus.Logger) {
 			r.cooldownDuration = time.Duration(cooldownDurationInSeconds) * time.Second
 			logger.WithField("value", r.cooldownDuration).Info("Updated cooldown duration")
 		}
+	}
+
+	dumpResponseOnParseErrorValue := os.Getenv("DEFERRED_DUMP_RESPONSE_ON_PARSE_ERROR")
+	if len(dumpResponseOnParseErrorValue) > 0 {
+		r.dumpResponseOnParseError = dumpResponseOnParseErrorValue == "true" ||
+			dumpResponseOnParseErrorValue == "yes" ||
+			dumpResponseOnParseErrorValue == "1"
+		logger.WithField("value", r.dumpResponseOnParseError).Info("Updated dump response on parse error")
 	}
 
 	r.errorsBeforeQuitting = 3
