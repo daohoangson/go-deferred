@@ -191,10 +191,10 @@ func (r *runner) init(client *http.Client, logger *logrus.Logger) {
 	r.logger = logger
 
 	r.cooldownDuration = time.Minute
-	cooldownDurationInSecondsValue := os.Getenv("DEFERRED_COOLDOWN_DURATION_IN_SECONDS")
-	if len(cooldownDurationInSecondsValue) > 0 {
-		if cooldownDurationInSeconds, err := strconv.ParseInt(cooldownDurationInSecondsValue, 10, 64); err == nil {
-			r.cooldownDuration = time.Duration(cooldownDurationInSeconds) * time.Second
+	cooldownDurationValue := os.Getenv("DEFERRED_COOLDOWN_DURATION")
+	if len(cooldownDurationValue) > 0 {
+		if cooldownDuration, err := time.ParseDuration(cooldownDurationValue); err == nil {
+			r.cooldownDuration = cooldownDuration
 			logger.WithField("value", r.cooldownDuration).Info("Updated cooldown duration")
 		}
 	}

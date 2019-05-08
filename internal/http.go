@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -20,10 +19,10 @@ func GetHTTPClient() *http.Client {
 		}
 
 		timeout := time.Minute + time.Second
-		timeoutInSecondsValue := os.Getenv("DEFERRED_HTTP_CLIENT_TIMEOUT_IN_SECONDS")
-		if len(timeoutInSecondsValue) > 0 {
-			if timeoutInSeconds, err := strconv.ParseInt(timeoutInSecondsValue, 10, 64); err == nil {
-				timeout = time.Duration(timeoutInSeconds) * time.Second
+		timeoutValue := os.Getenv("DEFERRED_HTTP_CLIENT_TIMEOUT")
+		if len(timeoutValue) > 0 {
+			if timeoutParsed, err := time.ParseDuration(timeoutValue); err == nil {
+				timeout = timeoutParsed
 				fmt.Printf("timeout=%s\n", timeout)
 			}
 		}
